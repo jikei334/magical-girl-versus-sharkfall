@@ -1,0 +1,29 @@
+# Unity 生成物
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/.utmp/
+*.log
+
+# IDE
+.vs/
+.idea/
+.vscode/
+*.csproj
+*.sln
+*.slnx
+*.user
+
+# XREAL SDK は再配布条件が未確認のためコミットしない
+# 導入手順: doc/setup.md / tools/setup-xreal-sdk.sh
+/Packages/com.xreal.xr/
+*.tgz
+com.xreal.xr*.tar.gz
+
+# ビルド成果物
+*.apk
+*.aab
