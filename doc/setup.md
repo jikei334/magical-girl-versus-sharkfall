@@ -67,6 +67,19 @@ XREAL Air 2 Pro + Beam Pro 向けのUnityプロジェクトを、クローン直
       Windowsのファイアウォールで、Pythonの受信(プライベートネットワーク)を許可するか聞かれたら許可する。
       PCのLAN内IPアドレスは `ipconfig`(Windows)または `ip addr`(Linux)で確認する。
 
+      **起動前にポート8123が空いているか確認すること。** 以前のサーバーを`Ctrl+C`で止め忘れたまま
+      放置すると、新しいサーバーがポート使用中で起動に失敗し、古いプロセスが古いAPKを返し続けて
+      `404 Not Found`(存在しないファイル名でアクセスした場合)や意図しないファイルの配布につながる。
+
+      ```powershell
+      Get-NetTCPConnection -LocalPort 8123 -ErrorAction SilentlyContinue
+      # 何か表示されたら、その OwningProcess を終了する
+      Stop-Process -Id <PID> -Force
+      ```
+
+      `http://localhost:8123/` をブラウザで開き、ディレクトリ一覧に `MagicalGirl.apk` が
+      表示されることを確認してからBeam Pro側の操作に進むと確実。
+
    2. Beam Proのブラウザで `http://<PCのLAN IP>:8123/MagicalGirl.apk` を開き、APKをダウンロードする。
 
    3. ダウンロードしたAPKを開いてインストールする。初回は「提供元不明のアプリ」のインストール許可
