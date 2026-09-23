@@ -1,5 +1,7 @@
 using System.IO;
+using MagicalGirl.City;
 using MagicalGirl.Controls;
+using MagicalGirl.Core.City;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -9,13 +11,26 @@ using UnityEngine.SpatialTracking;
 namespace MagicalGirl.EditorTools
 {
     /// <summary>
-    /// 疑似飛行コントローラー(BroomFlightController)を実機で確認するためのテストシーンを
-    /// 生成するエディタスクリプト。箒の機体役のリグに傾き入力・飛行制御・頭部トラッキング用
-    /// カメラをまとめ、移動を視認しやすいように地面と目印の立方体を配置する。
+    /// 疑似飛行コントローラー(BroomFlightController)と手続き型都市生成を実機で確認するための
+    /// テストシーンを生成するエディタスクリプト。箒の機体役のリグに傾き入力・飛行制御・頭部
+    /// トラッキング用カメラをまとめ、地面と生成した街(建物+ランドマークタワー)を配置する。
     /// </summary>
     public static class FlightTestSceneSetup
     {
         const string k_ScenePath = "Assets/Scenes/FlightTest.unity";
+
+        // テストシーン用の都市生成パラメータ。シードは固定し、毎回同じ街が再現されるようにする。
+        static readonly CityGenerationConfig k_CityConfig = new CityGenerationConfig(
+            gridExtent: 4,
+            blockSize: 20f,
+            roadWidth: 10f,
+            minBuildingHeight: 5f,
+            maxBuildingHeight: 40f,
+            minFootprintRatio: 0.4f,
+            maxFootprintRatio: 0.8f,
+            landmarkHeight: 80f,
+            landmarkFootprintRatio: 0.5f,
+            seed: 12345);
 
         /// <summary>
         /// テストシーンを生成して保存する。
@@ -28,7 +43,7 @@ namespace MagicalGirl.EditorTools
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             BuildGround();
-            BuildLandmarks();
+            BuildCity();
             BuildBroomRig();
 
             var light = new GameObject("Directional Light");
@@ -77,29 +92,15 @@ namespace MagicalGirl.EditorTools
         }
 
         /// <summary>
-        /// 旋回・移動を視認しやすいよう、周囲に立方体の目印を格子状に配置する。
+        /// 手続き型都市生成(CityGenerator)で街のレイアウトを作り、CityBuilderで実際の
+        /// GameObject(建物+ランドマークタワー)として配置する。
         /// 引数: なし
         /// 返り値: なし
         /// </summary>
-        static void BuildLandmarks()
+        static void BuildCity()
         {
-            const int gridExtent = 4;
-            const float spacing = 20f;
-
-            for (var x = -gridExtent; x <= gridExtent; x++)
-            {
-                for (var z = -gridExtent; z <= gridExtent; z++)
-                {
-                    if (x == 0 && z == 0)
-                        continue;
-
-                    var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                    cube.name = $"Landmark_{x}_{z}";
-                    var height = Random.Range(2f, 8f);
-                    cube.transform.position = new Vector3(x * spacing, height / 2f, z * spacing);
-                    cube.transform.localScale = new Vector3(2f, height, 2f);
-                }
-            }
+            var layout = CityGenerator.Generate(k_CityConfig);
+            CityBuilder.Build(layout, null);
         }
 
         /// <summary>
@@ -111,7 +112,9 @@ namespace MagicalGirl.EditorTools
         static void BuildBroomRig()
         {
             var rigGo = new GameObject("BroomRig");
-            rigGo.transform.position = new Vector3(0f, 5f, 0f);
+            // 通常のビル群(最大MaxBuildingHeight)の上、ランドマークタワー(LandmarkHeight)より
+            // 低い高度から開始し、スカイラインを見下ろしつつランドマークが遠くに見える構図にする。
+            rigGo.transform.position = new Vector3(0f, 50f, -100f);
 
             rigGo.AddComponent<BeamProTiltController>();
             rigGo.AddComponent<BroomFlightController>();
