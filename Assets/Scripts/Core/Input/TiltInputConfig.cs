@@ -19,11 +19,19 @@ namespace MagicalGirl.Core.Input
         /// <summary>ピッチ軸で正規化値が±1に達するとみなす傾き角度(度、0より大きい値)。</summary>
         public float PitchFullScaleDegrees { get; }
 
-        /// <summary>ピッチの「通常域」の上限(0より大きく1以下)。これを超えると緩衝ゾーンに入る。</summary>
-        public float PitchNormalMax { get; }
+        /// <summary>ブレーキ判定(ピッチ)の「通常域」の上限(0より大きく1以下)。
+        /// これを超えると緩衝ゾーンに入る。</summary>
+        public float BrakeNormalMax { get; }
 
-        /// <summary>ピッチの「ブレーキ(極端域)」の下限(PitchNormalMaxより大きく1以下)。</summary>
-        public float PitchBrakeMin { get; }
+        /// <summary>ブレーキ判定(ピッチ)の「ブレーキ(極端域)」の下限
+        /// (BrakeNormalMaxより大きく1以下)。</summary>
+        public float BrakeMin { get; }
+
+        /// <summary>
+        /// trueなら負のピッチ(機首を下げる方向)、falseなら正のピッチ(機首を上げる方向)を
+        /// 引き切ったときにブレーキを発動する。プレイヤーの好みで切り替えられる想定の設定。
+        /// </summary>
+        public bool BrakeOnNegativePitch { get; }
 
         /// <summary>
         /// 設定値を検証しつつ構築する。各引数の意味は同名プロパティのコメントを参照。
@@ -35,8 +43,9 @@ namespace MagicalGirl.Core.Input
             float exponent,
             float rollFullScaleDegrees,
             float pitchFullScaleDegrees,
-            float pitchNormalMax,
-            float pitchBrakeMin)
+            float brakeNormalMax,
+            float brakeMin,
+            bool brakeOnNegativePitch)
         {
             if (deadzone < 0f || deadzone >= 1f)
                 throw new ArgumentOutOfRangeException(nameof(deadzone), deadzone, "deadzoneは0以上1未満である必要があります。");
@@ -46,17 +55,18 @@ namespace MagicalGirl.Core.Input
                 throw new ArgumentOutOfRangeException(nameof(rollFullScaleDegrees), rollFullScaleDegrees, "rollFullScaleDegreesは0より大きい必要があります。");
             if (pitchFullScaleDegrees <= 0f)
                 throw new ArgumentOutOfRangeException(nameof(pitchFullScaleDegrees), pitchFullScaleDegrees, "pitchFullScaleDegreesは0より大きい必要があります。");
-            if (pitchNormalMax <= 0f || pitchNormalMax > 1f)
-                throw new ArgumentOutOfRangeException(nameof(pitchNormalMax), pitchNormalMax, "pitchNormalMaxは0より大きく1以下である必要があります。");
-            if (pitchBrakeMin <= pitchNormalMax || pitchBrakeMin > 1f)
-                throw new ArgumentOutOfRangeException(nameof(pitchBrakeMin), pitchBrakeMin, "pitchBrakeMinはpitchNormalMaxより大きく1以下である必要があります。");
+            if (brakeNormalMax <= 0f || brakeNormalMax > 1f)
+                throw new ArgumentOutOfRangeException(nameof(brakeNormalMax), brakeNormalMax, "brakeNormalMaxは0より大きく1以下である必要があります。");
+            if (brakeMin <= brakeNormalMax || brakeMin > 1f)
+                throw new ArgumentOutOfRangeException(nameof(brakeMin), brakeMin, "brakeMinはbrakeNormalMaxより大きく1以下である必要があります。");
 
             Deadzone = deadzone;
             Exponent = exponent;
             RollFullScaleDegrees = rollFullScaleDegrees;
             PitchFullScaleDegrees = pitchFullScaleDegrees;
-            PitchNormalMax = pitchNormalMax;
-            PitchBrakeMin = pitchBrakeMin;
+            BrakeNormalMax = brakeNormalMax;
+            BrakeMin = brakeMin;
+            BrakeOnNegativePitch = brakeOnNegativePitch;
         }
     }
 }

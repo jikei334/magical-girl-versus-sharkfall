@@ -5,12 +5,15 @@ namespace MagicalGirl.Core.Input
     /// <summary>
     /// Beam Proの生の傾き角度(度)から、キャリブレーション・デッドゾーン・非線形カーブ・
     /// ブレーキゾーン判定までを行うUnity非依存のロジック。
+    /// ブレーキはピッチを引き切ったときにのみ発動する。どちら向き(機首上げ/機首下げ)で
+    /// 発動するかはTiltInputConfig.BrakeOnNegativePitchで切り替えられる(設定画面などから
+    /// UpdateConfigで変更する想定)。
     /// センサー値の取得自体はUnity側(例: MagicalGirl.Controls.BeamProTiltController)が
     /// 担当し、このクラスには角度(度)だけを渡す。
     /// </summary>
     public sealed class TiltInputProcessor
     {
-        readonly TiltInputConfig m_Config;
+        TiltInputConfig m_Config;
         float m_NeutralRoll;
         float m_NeutralPitch;
         bool m_IsCalibrated;
@@ -20,6 +23,18 @@ namespace MagicalGirl.Core.Input
         /// 返り値: なし(コンストラクタ)
         /// </summary>
         public TiltInputProcessor(TiltInputConfig config)
+        {
+            m_Config = config;
+        }
+
+        /// <summary>
+        /// 動作パラメータを実行中に差し替える。キャリブレーション状態(ニュートラル位置)は
+        /// 維持されるため、再キャリブレーションは不要。設定画面からの感度・ブレーキ方向の
+        /// 変更などを想定。
+        /// 引数: config - 新しい動作パラメータ
+        /// 返り値: なし
+        /// </summary>
+        public void UpdateConfig(TiltInputConfig config)
         {
             m_Config = config;
         }
@@ -53,10 +68,11 @@ namespace MagicalGirl.Core.Input
             var roll = AxisInputCurve.Apply(rollOffset, m_Config.Deadzone, m_Config.Exponent);
             var pitch = AxisInputCurve.Apply(pitchOffset, m_Config.Deadzone, m_Config.Exponent);
 
-            // ブレーキは「機首を上げる」方向(正のピッチ)にのみ存在する。
-            var zone = pitch > 0f
-                ? PitchZoneClassifier.Classify(pitch, m_Config.PitchNormalMax, m_Config.PitchBrakeMin)
-                : PitchZone.Normal;
+            // ブレーキは設定で選んだ片方向(機首上げ/機首下げのどちらか)にのみ存在する。
+            var brakeAxisValue = m_Config.BrakeOnNegativePitch ? -pitch : pitch;
+            var zone = brakeAxisValue > 0f
+                ? BrakeZoneClassifier.Classify(brakeAxisValue, m_Config.BrakeNormalMax, m_Config.BrakeMin)
+                : BrakeZone.Normal;
 
             return new TiltInputState(roll, pitch, zone);
         }

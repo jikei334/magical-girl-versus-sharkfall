@@ -236,14 +236,14 @@ namespace MagicalGirl.EditorTools
             so.FindProperty("m_Text").objectReferenceValue = tm;
             so.ApplyModifiedProperties();
 
-            // 傾き入力(ロール/ピッチ/ブレーキゾーン)を実機で確認するためのデバッグ表示。
+            // 傾き入力(生の加速度値/ロール/ピッチ/ブレーキゾーン)を実機で確認するためのデバッグ表示。
             // 1つ目のテキストの下に配置し、FOV(対角約46度)に収まる範囲に収める。
             var tiltTextGo = new GameObject("TiltDebugText");
-            tiltTextGo.transform.position = new Vector3(0f, -0.25f, 3f);
+            tiltTextGo.transform.position = new Vector3(0f, -0.3f, 3f);
             var tiltTm = tiltTextGo.AddComponent<TextMesh>();
-            tiltTm.text = "Roll: -\nPitch: -\nZone: -";
-            tiltTm.fontSize = 36;
-            tiltTm.characterSize = 0.015f;
+            tiltTm.text = "Accel: -\nRoll: -\nPitch: -\nZone: -";
+            tiltTm.fontSize = 32;
+            tiltTm.characterSize = 0.013f;
             tiltTm.anchor = TextAnchor.MiddleCenter;
             tiltTm.alignment = TextAlignment.Center;
             tiltTm.color = Color.yellow;

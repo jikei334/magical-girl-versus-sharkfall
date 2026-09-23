@@ -4,7 +4,7 @@ using Xunit;
 
 namespace MagicalGirl.Core.Tests
 {
-    public class PitchZoneClassifierTests
+    public class BrakeZoneClassifierTests
     {
         const float NormalMax = 0.75f;
         const float BrakeMin = 0.9f;
@@ -15,7 +15,7 @@ namespace MagicalGirl.Core.Tests
         [InlineData(0.74f)]
         public void Classify_BelowNormalMax_ReturnsNormal(float magnitude)
         {
-            Assert.Equal(PitchZone.Normal, PitchZoneClassifier.Classify(magnitude, NormalMax, BrakeMin));
+            Assert.Equal(BrakeZone.Normal, BrakeZoneClassifier.Classify(magnitude, NormalMax, BrakeMin));
         }
 
         [Theory]
@@ -24,7 +24,7 @@ namespace MagicalGirl.Core.Tests
         [InlineData(0.89f)]
         public void Classify_BetweenNormalMaxAndBrakeMin_ReturnsBuffer(float magnitude)
         {
-            Assert.Equal(PitchZone.Buffer, PitchZoneClassifier.Classify(magnitude, NormalMax, BrakeMin));
+            Assert.Equal(BrakeZone.Buffer, BrakeZoneClassifier.Classify(magnitude, NormalMax, BrakeMin));
         }
 
         [Theory]
@@ -32,19 +32,19 @@ namespace MagicalGirl.Core.Tests
         [InlineData(1f)]
         public void Classify_AtOrAboveBrakeMin_ReturnsBrake(float magnitude)
         {
-            Assert.Equal(PitchZone.Brake, PitchZoneClassifier.Classify(magnitude, NormalMax, BrakeMin));
+            Assert.Equal(BrakeZone.Brake, BrakeZoneClassifier.Classify(magnitude, NormalMax, BrakeMin));
         }
 
         [Fact]
         public void Classify_BrakeMinNotGreaterThanNormalMax_Throws()
         {
-            Assert.Throws<ArgumentOutOfRangeException>(() => PitchZoneClassifier.Classify(0.5f, normalMax: 0.8f, brakeMin: 0.8f));
+            Assert.Throws<ArgumentOutOfRangeException>(() => BrakeZoneClassifier.Classify(0.5f, normalMax: 0.8f, brakeMin: 0.8f));
         }
 
         [Fact]
         public void Classify_NormalMaxOutOfRange_Throws()
         {
-            Assert.Throws<ArgumentOutOfRangeException>(() => PitchZoneClassifier.Classify(0.5f, normalMax: 0f, brakeMin: 0.9f));
+            Assert.Throws<ArgumentOutOfRangeException>(() => BrakeZoneClassifier.Classify(0.5f, normalMax: 0f, brakeMin: 0.9f));
         }
     }
 }
