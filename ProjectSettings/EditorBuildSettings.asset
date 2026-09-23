@@ -6,6 +6,9 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/Scenes/FlightTest.unity
+    guid: 63946039cc3dcca46977073adb23acc4
+  - enabled: 1
     path: Assets/Scenes/DeviceCheck.unity
     guid: 7ae8e5361561fe441a47214f8ead33d8
   m_configObjects:

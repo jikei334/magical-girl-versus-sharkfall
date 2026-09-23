@@ -62,9 +62,19 @@ namespace MagicalGirl.EditorTools
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(k_ApkPath));
 
+                // EditorBuildSettings.scenesに登録されている、有効なシーンを先頭から順にビルドする。
+                // (以前はDeviceCheckシーンをハードコードしていたため、他のシーンを先頭に登録しても
+                // 反映されないバグがあった。)
+                var scenePaths = Array.ConvertAll(
+                    Array.FindAll(EditorBuildSettings.scenes, s => s.enabled),
+                    s => s.path);
+
+                if (scenePaths.Length == 0)
+                    throw new InvalidOperationException("EditorBuildSettings.scenesに有効なシーンが登録されていません。先にSetup()またはシーン生成スクリプトを実行してください。");
+
                 var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
                 {
-                    scenes = new[] { k_ScenePath },
+                    scenes = scenePaths,
                     locationPathName = k_ApkPath,
                     target = BuildTarget.Android,
                     options = BuildOptions.None

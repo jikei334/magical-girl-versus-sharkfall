@@ -62,6 +62,10 @@ namespace MagicalGirl.Controls
         /// <summary>直近のUpdateで算出した入力状態。</summary>
         public TiltInputState Current { get; private set; }
 
+        /// <summary>現在、ブレーキが負のピッチ(機首下げ)で発動する設定になっているかどうか。
+        /// FlightModelが「機首上げ」の向きを判定するために参照する。</summary>
+        public bool BrakeOnNegativePitch => m_BrakeOnNegativePitch;
+
         /// <summary>
         /// 加速度センサーの対応状況を確認し、TiltInputProcessorを構築する。
         /// 引数: なし
