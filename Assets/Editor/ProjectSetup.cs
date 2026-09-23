@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using MagicalGirl.Controls;
 using Unity.XR.XREAL;
 using UnityEditor;
 using UnityEditor.Build;
@@ -234,6 +235,24 @@ namespace MagicalGirl.EditorTools
             var so = new SerializedObject(controller);
             so.FindProperty("m_Text").objectReferenceValue = tm;
             so.ApplyModifiedProperties();
+
+            // 傾き入力(生の加速度値/ロール/ピッチ/ブレーキゾーン)を実機で確認するためのデバッグ表示。
+            // 1つ目のテキストの下に配置し、FOV(対角約46度)に収まる範囲に収める。
+            var tiltTextGo = new GameObject("TiltDebugText");
+            tiltTextGo.transform.position = new Vector3(0f, -0.3f, 3f);
+            var tiltTm = tiltTextGo.AddComponent<TextMesh>();
+            tiltTm.text = "Accel: -\nRoll: -\nPitch: -\nZone: -";
+            tiltTm.fontSize = 32;
+            tiltTm.characterSize = 0.013f;
+            tiltTm.anchor = TextAnchor.MiddleCenter;
+            tiltTm.alignment = TextAlignment.Center;
+            tiltTm.color = Color.yellow;
+
+            var tiltControllerGo = new GameObject("BeamProTiltController");
+            var tiltController = tiltControllerGo.AddComponent<BeamProTiltController>();
+            var tiltSo = new SerializedObject(tiltController);
+            tiltSo.FindProperty("m_DebugText").objectReferenceValue = tiltTm;
+            tiltSo.ApplyModifiedProperties();
 
             Directory.CreateDirectory(Path.GetDirectoryName(k_ScenePath));
             if (!EditorSceneManager.SaveScene(scene, k_ScenePath))
