@@ -118,13 +118,15 @@ namespace MagicalGirl.Controls
         /// <summary>
         /// 加速度センサー(重力方向)からロール・ピッチ角(度)を算出する。
         /// 引数: なし
-        /// 返り値: (ロール角, ピッチ角) のタプル(度)。符号・軸の対応は実機未検証
+        /// 返り値: (ロール角, ピッチ角) のタプル(度)。
+        /// ピッチは実機確認により前後が逆だったため符号を反転済み(正=機首を上げる方向)。
+        /// ロールの符号・軸の対応は未確認
         /// </summary>
         (float roll, float pitch) ReadRawAngles()
         {
             var accel = UnityEngine.Input.acceleration;
             var roll = Mathf.Atan2(accel.x, -accel.z) * Mathf.Rad2Deg;
-            var pitch = Mathf.Atan2(accel.y, Mathf.Sqrt(accel.x * accel.x + accel.z * accel.z)) * Mathf.Rad2Deg;
+            var pitch = -Mathf.Atan2(accel.y, Mathf.Sqrt(accel.x * accel.x + accel.z * accel.z)) * Mathf.Rad2Deg;
             return (roll, pitch);
         }
     }
