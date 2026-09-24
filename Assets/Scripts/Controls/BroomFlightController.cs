@@ -6,12 +6,15 @@ namespace MagicalGirl.Controls
     /// <summary>
     /// 傾き入力(BeamProTiltController)を使って箒(このGameObjectのTransform)を飛行させる
     /// コンポーネント。実際の数値計算はUnity非依存のMagicalGirl.Core.Flight.FlightModelに委譲する。
+    /// 移動はCharacterController.Move()経由で行い、建物や境界壁のColliderとの衝突を検出・
+    /// ブロックする(Transform.positionを直接書き換えるとColliderをすり抜けてしまうため)。
     ///
     /// 頭部トラッキングによるカメラの視線制御とは独立している。カメラはこのTransformの子として
     /// 配置し、TrackedPoseDriver(3DoF)でカメラ自身のローカル回転を駆動する想定。
     /// このコンポーネントは箒本体(機体)の位置・旋回・姿勢だけを扱う。
     /// </summary>
     [RequireComponent(typeof(BeamProTiltController))]
+    [RequireComponent(typeof(CharacterController))]
     public class BroomFlightController : MonoBehaviour
     {
         [SerializeField]
@@ -59,6 +62,7 @@ namespace MagicalGirl.Controls
         float m_StallSpeed = 1f;
 
         BeamProTiltController m_TiltController;
+        CharacterController m_CharacterController;
         FlightModel m_Model;
         float m_YawDeg;
 
@@ -66,13 +70,18 @@ namespace MagicalGirl.Controls
         public FlightOutput Current { get; private set; }
 
         /// <summary>
-        /// TiltControllerの取得とFlightModelの構築を行う。
+        /// TiltController・CharacterControllerの取得とFlightModelの構築を行う。
         /// 引数: なし
         /// 返り値: なし
         /// </summary>
         void Awake()
         {
             m_TiltController = GetComponent<BeamProTiltController>();
+
+            m_CharacterController = GetComponent<CharacterController>();
+            // 飛行中は「立っている」概念がないため、コライダーの中心を原点に置く
+            // (CharacterControllerのデフォルトは接地キャラクター向けにY+1オフセットされている)。
+            m_CharacterController.center = Vector3.zero;
 
             var config = new FlightConfig(
                 baseSpeed: m_BaseSpeed,
@@ -109,7 +118,9 @@ namespace MagicalGirl.Controls
             m_YawDeg += output.YawRateDegPerSecond * Time.deltaTime;
             transform.localRotation = Quaternion.Euler(-output.PitchAngleDeg, m_YawDeg, -output.BankAngleDeg);
 
-            transform.position += transform.forward * (output.Speed * Time.deltaTime);
+            // Transform.positionを直接書き換えるとColliderをすり抜けるため、
+            // CharacterController.Move()で移動し、建物・境界壁との衝突を検出させる。
+            m_CharacterController.Move(transform.forward * (output.Speed * Time.deltaTime));
         }
     }
 }

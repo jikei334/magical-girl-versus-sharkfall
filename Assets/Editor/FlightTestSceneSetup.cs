@@ -21,17 +21,24 @@ namespace MagicalGirl.EditorTools
         const string k_ScenePath = "Assets/Scenes/FlightTest.unity";
 
         // テストシーン用の都市生成パラメータ。シードは固定し、毎回同じ街が再現されるようにする。
+        // 実機確認で「ビルが小さい気がする」とのフィードバックを受け、ブロックサイズ・
+        // 建物の高さを大きめに調整してある。
         static readonly CityGenerationConfig k_CityConfig = new CityGenerationConfig(
             gridExtent: 4,
-            blockSize: 20f,
-            roadWidth: 10f,
-            minBuildingHeight: 5f,
-            maxBuildingHeight: 40f,
+            blockSize: 40f,
+            roadWidth: 20f,
+            minBuildingHeight: 15f,
+            maxBuildingHeight: 100f,
             minFootprintRatio: 0.4f,
             maxFootprintRatio: 0.8f,
-            landmarkHeight: 80f,
+            landmarkHeight: 250f,
             landmarkFootprintRatio: 0.5f,
             seed: 12345);
+
+        // 境界壁の配置パラメータ。街のグリッド1ブロック分外側に境界を置く。
+        static float CityBlockSpacing => k_CityConfig.BlockSize + k_CityConfig.RoadWidth;
+        static float StageHalfExtent => k_CityConfig.GridExtent * CityBlockSpacing + CityBlockSpacing;
+        const float StageWallHeight = 400f;
 
         /// <summary>
         /// テストシーンを生成して保存する。
@@ -45,6 +52,7 @@ namespace MagicalGirl.EditorTools
 
             BuildGround();
             BuildCity();
+            BuildBoundary();
             BuildBroomRig();
 
             var light = new GameObject("Directional Light");
@@ -89,7 +97,19 @@ namespace MagicalGirl.EditorTools
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
             ground.transform.position = new Vector3(0f, 0f, 0f);
-            ground.transform.localScale = new Vector3(50f, 1f, 50f); // Planeは10x10単位なので500x500相当
+            // Planeは10x10単位なので、境界壁(StageHalfExtent)より確実に広くなるスケールにする。
+            var scale = StageHalfExtent / 5f + 10f;
+            ground.transform.localScale = new Vector3(scale, 1f, scale);
+        }
+
+        /// <summary>
+        /// 街の外周に、ステージ外へ出られないようにする境界壁(StageBoundary)を配置する。
+        /// 引数: なし
+        /// 返り値: なし
+        /// </summary>
+        static void BuildBoundary()
+        {
+            StageBoundary.Build(StageHalfExtent, StageWallHeight, null);
         }
 
         /// <summary>
@@ -115,10 +135,16 @@ namespace MagicalGirl.EditorTools
             var rigGo = new GameObject("BroomRig");
             // 通常のビル群(最大MaxBuildingHeight)の上、ランドマークタワー(LandmarkHeight)より
             // 低い高度から開始し、スカイラインを見下ろしつつランドマークが遠くに見える構図にする。
-            rigGo.transform.position = new Vector3(0f, 50f, -100f);
+            rigGo.transform.position = new Vector3(0f, 150f, -250f);
 
             rigGo.AddComponent<BeamProTiltController>();
             rigGo.AddComponent<BroomFlightController>();
+
+            // 箒+ライダー相当のサイズの当たり判定にする(CharacterControllerの既定値は
+            // 接地キャラクター向けの小さめのサイズのため、街のスケールに合わせて広げる)。
+            var characterController = rigGo.GetComponent<CharacterController>();
+            characterController.radius = 2f;
+            characterController.height = 3f;
 
             var cameraGo = new GameObject("Main Camera");
             cameraGo.transform.SetParent(rigGo.transform, false);
@@ -134,6 +160,8 @@ namespace MagicalGirl.EditorTools
             var poseDriver = cameraGo.AddComponent<TrackedPoseDriver>();
             poseDriver.SetPoseSource(TrackedPoseDriver.DeviceType.GenericXRDevice, TrackedPoseDriver.TrackedPose.Center);
             poseDriver.trackingType = TrackedPoseDriver.TrackingType.RotationOnly;
+
+            BuildVersionDisplay(cameraGo);
 
             // 飛行状態(速度・旋回・機首角)を確認するデバッグ表示。カメラの子にして常に視界内に置く。
             var debugTextGo = new GameObject("FlightDebugText");
@@ -187,6 +215,31 @@ namespace MagicalGirl.EditorTools
             var so = new SerializedObject(hud);
             so.FindProperty("m_InputController").objectReferenceValue = input;
             so.FindProperty("m_Text").objectReferenceValue = debugTm;
+            so.ApplyModifiedProperties();
+        }
+
+        /// <summary>
+        /// カメラ視界の右上に、実機で確認しているビルドが最新かどうかの目印になる
+        /// バージョン番号(BuildInfo.Version)を表示する。
+        /// 引数: cameraGo - 表示先のカメラGameObject
+        /// 返り値: なし
+        /// </summary>
+        static void BuildVersionDisplay(GameObject cameraGo)
+        {
+            var textGo = new GameObject("BuildVersionText");
+            textGo.transform.SetParent(cameraGo.transform, false);
+            textGo.transform.localPosition = new Vector3(0.9f, 0.55f, 3f);
+            var tm = textGo.AddComponent<TextMesh>();
+            tm.text = "Build v-";
+            tm.fontSize = 28;
+            tm.characterSize = 0.011f;
+            tm.anchor = TextAnchor.MiddleRight;
+            tm.alignment = TextAlignment.Right;
+            tm.color = Color.yellow;
+
+            var hud = textGo.AddComponent<BuildVersionHud>();
+            var so = new SerializedObject(hud);
+            so.FindProperty("m_Text").objectReferenceValue = tm;
             so.ApplyModifiedProperties();
         }
     }
