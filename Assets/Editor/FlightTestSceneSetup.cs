@@ -2,6 +2,7 @@ using System.IO;
 using MagicalGirl.City;
 using MagicalGirl.Controls;
 using MagicalGirl.Core.City;
+using MagicalGirl.Gesture;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -151,6 +152,40 @@ namespace MagicalGirl.EditorTools
             var hud = hudGo.AddComponent<FlightDebugHud>();
             var so = new SerializedObject(hud);
             so.FindProperty("m_FlightController").objectReferenceValue = rigGo.GetComponent<BroomFlightController>();
+            so.FindProperty("m_Text").objectReferenceValue = debugTm;
+            so.ApplyModifiedProperties();
+
+            BuildGestureInput(rigGo, cameraGo);
+        }
+
+        /// <summary>
+        /// タッチパッドのジェスチャー入力(GestureInputController)と、認識結果を確認する
+        /// デバッグ表示を配置する。
+        /// 引数: rigGo - 箒リグのGameObject / cameraGo - カメラのGameObject(デバッグ表示の親)
+        /// 返り値: なし
+        /// </summary>
+        static void BuildGestureInput(GameObject rigGo, GameObject cameraGo)
+        {
+            var inputGo = new GameObject("GestureInputController");
+            inputGo.transform.SetParent(rigGo.transform, false);
+            var input = inputGo.AddComponent<GestureInputController>();
+
+            var debugTextGo = new GameObject("GestureDebugText");
+            debugTextGo.transform.SetParent(cameraGo.transform, false);
+            debugTextGo.transform.localPosition = new Vector3(0f, 0.4f, 3f);
+            var debugTm = debugTextGo.AddComponent<TextMesh>();
+            debugTm.text = "Gesture: -";
+            debugTm.fontSize = 32;
+            debugTm.characterSize = 0.013f;
+            debugTm.anchor = TextAnchor.MiddleCenter;
+            debugTm.alignment = TextAlignment.Center;
+            debugTm.color = Color.magenta;
+
+            var hudGo = new GameObject("GestureDebugHud");
+            hudGo.transform.SetParent(rigGo.transform, false);
+            var hud = hudGo.AddComponent<GestureDebugHud>();
+            var so = new SerializedObject(hud);
+            so.FindProperty("m_InputController").objectReferenceValue = input;
             so.FindProperty("m_Text").objectReferenceValue = debugTm;
             so.ApplyModifiedProperties();
         }
