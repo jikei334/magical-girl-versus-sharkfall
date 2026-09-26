@@ -1,5 +1,6 @@
 using System.IO;
 using MagicalGirl.City;
+using MagicalGirl.Combat;
 using MagicalGirl.Controls;
 using MagicalGirl.Core.City;
 using MagicalGirl.Core.Enemy;
@@ -44,6 +45,9 @@ namespace MagicalGirl.EditorTools
 
         const string k_SharkModelPath = "Assets/Art/Enemies/School/shark.fbx";
         const string k_SharkPrefabPath = "Assets/Prefabs/Enemies/SharkSchool.prefab";
+        const string k_FireballPrefabPath = "Assets/Prefabs/Combat/Fireball.prefab";
+        const string k_FireballMaterialPath = "Assets/Prefabs/Combat/FireballMaterial.mat";
+        const string k_BarrierMaterialPath = "Assets/Prefabs/Combat/BarrierMaterial.mat";
 
         /// <summary>
         /// テストシーンを生成して保存する。
@@ -285,16 +289,17 @@ namespace MagicalGirl.EditorTools
             so.FindProperty("m_Text").objectReferenceValue = debugTm;
             so.ApplyModifiedProperties();
 
-            BuildGestureInput(rigGo, cameraGo);
+            var gestureInput = BuildGestureInput(rigGo, cameraGo);
+            BuildCombat(rigGo, cameraGo, gestureInput);
         }
 
         /// <summary>
         /// タッチパッドのジェスチャー入力(GestureInputController)と、認識結果を確認する
         /// デバッグ表示を配置する。
         /// 引数: rigGo - 箒リグのGameObject / cameraGo - カメラのGameObject(デバッグ表示の親)
-        /// 返り値: なし
+        /// 返り値: 生成したGestureInputController(SpellCasterの入力元として使う)
         /// </summary>
-        static void BuildGestureInput(GameObject rigGo, GameObject cameraGo)
+        static GestureInputController BuildGestureInput(GameObject rigGo, GameObject cameraGo)
         {
             var inputGo = new GameObject("GestureInputController");
             inputGo.transform.SetParent(rigGo.transform, false);
@@ -318,6 +323,127 @@ namespace MagicalGirl.EditorTools
             so.FindProperty("m_InputController").objectReferenceValue = input;
             so.FindProperty("m_Text").objectReferenceValue = debugTm;
             so.ApplyModifiedProperties();
+
+            return input;
+        }
+
+        /// <summary>
+        /// シューティング基本ループ(火球・バリア)を配置する。ジェスチャー認識結果を
+        /// SpellCasterで攻撃に変換し、照準は頭部トラッキングで動くカメラの向きを使う。
+        /// 引数: rigGo - 箒リグのGameObject / cameraGo - 照準originにするカメラのGameObject
+        ///        / gestureInput - ジェスチャー入力元
+        /// 返り値: なし
+        /// </summary>
+        static void BuildCombat(GameObject rigGo, GameObject cameraGo, GestureInputController gestureInput)
+        {
+            var fireballPrefab = EnsureFireballPrefab();
+            if (fireballPrefab == null)
+                return;
+
+            var barrierGo = new GameObject("Barrier");
+            barrierGo.transform.SetParent(rigGo.transform, false);
+            var barrier = barrierGo.AddComponent<Barrier>();
+            var barrierSo = new SerializedObject(barrier);
+            barrierSo.FindProperty("m_VisualMaterial").objectReferenceValue = EnsureBarrierVisualMaterial();
+            barrierSo.ApplyModifiedProperties();
+
+            var casterGo = new GameObject("SpellCaster");
+            casterGo.transform.SetParent(rigGo.transform, false);
+            var caster = casterGo.AddComponent<SpellCaster>();
+            var casterSo = new SerializedObject(caster);
+            casterSo.FindProperty("m_GestureInput").objectReferenceValue = gestureInput;
+            casterSo.FindProperty("m_AimOrigin").objectReferenceValue = cameraGo.transform;
+            casterSo.FindProperty("m_FireballPrefab").objectReferenceValue = fireballPrefab;
+            casterSo.FindProperty("m_Barrier").objectReferenceValue = barrier;
+            casterSo.ApplyModifiedProperties();
+
+            // 直近に発動した攻撃種別を確認するデバッグ表示。
+            // 実機確認で「Attackの文字列が全く見えない」との報告があり、Y座標を高く
+            // (0.65)しすぎてXREAL Air 2 Proの縦方向視野角の外に出ていた可能性が高いため、
+            // 既に視認できているGestureDebugText(0, 0.4, 3)と同じ高さで横に並べる位置にする。
+            var debugTextGo = new GameObject("CombatDebugText");
+            debugTextGo.transform.SetParent(cameraGo.transform, false);
+            debugTextGo.transform.localPosition = new Vector3(-0.7f, 0.4f, 3f);
+            var debugTm = debugTextGo.AddComponent<TextMesh>();
+            debugTm.text = "Attack: -";
+            debugTm.fontSize = 28;
+            debugTm.characterSize = 0.011f;
+            debugTm.anchor = TextAnchor.MiddleCenter;
+            debugTm.alignment = TextAlignment.Center;
+            debugTm.color = Color.red;
+
+            var hudGo = new GameObject("CombatDebugHud");
+            hudGo.transform.SetParent(rigGo.transform, false);
+            var hud = hudGo.AddComponent<CombatDebugHud>();
+            var hudSo = new SerializedObject(hud);
+            hudSo.FindProperty("m_SpellCaster").objectReferenceValue = caster;
+            hudSo.FindProperty("m_Text").objectReferenceValue = debugTm;
+            hudSo.ApplyModifiedProperties();
+        }
+
+        /// <summary>
+        /// 火球のプレハブを作る(既に作成済みならそれを再利用する)。オレンジ色に発光する
+        /// 球体にFireballコンポーネント(RequireComponentでRigidbody/SphereColliderも付与)を
+        /// 付けただけのシンプルな見た目。
+        /// 引数: なし
+        /// 返り値: 生成(または既存)のプレハブ
+        /// </summary>
+        static Fireball EnsureFireballPrefab()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<GameObject>(k_FireballPrefabPath);
+            if (existing != null)
+                return existing.GetComponent<Fireball>();
+
+            var instance = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            instance.name = "Fireball";
+            // 実機確認で「火球が見えない」との報告があったため、街のスケール(ビル高さ15〜250)に
+            // 対して十分目立つサイズ・発光強度にする。
+            instance.transform.localScale = Vector3.one * 3f;
+
+            var material = new Material(Shader.Find("Standard"));
+            material.color = new Color(1f, 0.5f, 0.1f);
+            material.EnableKeyword("_EMISSION");
+            material.SetColor("_EmissionColor", new Color(1f, 0.3f, 0f) * 4f);
+
+            // new Material()で作った未保存のマテリアルをそのままプレハブに割り当てて
+            // SaveAsPrefabAssetすると、アセット化されていない参照は保存時にnullへ落ちてしまい
+            // (実機で「火球が全く見えない」不具合の原因だった)、レンダラーにマテリアル無しの
+            // まま生成されてしまう。先にマテリアル自体を独立したアセットとして保存することで、
+            // プレハブから有効な参照として残るようにする。
+            Directory.CreateDirectory(Path.GetDirectoryName(k_FireballMaterialPath));
+            AssetDatabase.CreateAsset(material, k_FireballMaterialPath);
+            instance.GetComponent<Renderer>().sharedMaterial = material;
+
+            instance.AddComponent<Fireball>();
+
+            Directory.CreateDirectory(Path.GetDirectoryName(k_FireballPrefabPath));
+            var savedPrefab = PrefabUtility.SaveAsPrefabAsset(instance, k_FireballPrefabPath);
+            Object.DestroyImmediate(instance);
+
+            return savedPrefab.GetComponent<Fireball>();
+        }
+
+        /// <summary>
+        /// バリア球体用の両面描画マテリアルを作る(既に作成済みならそれを再利用する)。
+        /// Shader.Find()を実行時に呼ぶと、ビルドにシェーダーが含まれず取得に失敗する
+        /// 可能性があるため、編集時にアセットとして保存しておく(Fireballの
+        /// マテリアル紛失不具合と同根の対策)。
+        /// 引数: なし
+        /// 返り値: 生成(または既存)のマテリアル
+        /// </summary>
+        static Material EnsureBarrierVisualMaterial()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(k_BarrierMaterialPath);
+            if (existing != null)
+                return existing;
+
+            var material = new Material(Shader.Find("MagicalGirl/DoubleSidedGlow"));
+            material.color = new Color(0.4f, 0.8f, 1f, 0.6f); // 水色、加算気味の半透明
+
+            Directory.CreateDirectory(Path.GetDirectoryName(k_BarrierMaterialPath));
+            AssetDatabase.CreateAsset(material, k_BarrierMaterialPath);
+
+            return material;
         }
 
         /// <summary>
