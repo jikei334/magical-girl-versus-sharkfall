@@ -7,6 +7,6 @@ namespace MagicalGirl.Controls
     public static class BuildInfo
     {
         /// <summary>現在のビルド番号。動作確認を依頼するたびに1ずつ増やすこと。</summary>
-        public const int Version = 1;
+        public const int Version = 7;
     }
 }

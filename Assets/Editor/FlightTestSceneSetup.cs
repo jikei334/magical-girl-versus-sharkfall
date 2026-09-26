@@ -2,6 +2,8 @@ using System.IO;
 using MagicalGirl.City;
 using MagicalGirl.Controls;
 using MagicalGirl.Core.City;
+using MagicalGirl.Core.Enemy;
+using MagicalGirl.Enemy;
 using MagicalGirl.Gesture;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -40,6 +42,9 @@ namespace MagicalGirl.EditorTools
         static float StageHalfExtent => k_CityConfig.GridExtent * CityBlockSpacing + CityBlockSpacing;
         const float StageWallHeight = 400f;
 
+        const string k_SharkModelPath = "Assets/Art/Enemies/School/shark.fbx";
+        const string k_SharkPrefabPath = "Assets/Prefabs/Enemies/SharkSchool.prefab";
+
         /// <summary>
         /// テストシーンを生成して保存する。
         /// 引数: なし
@@ -54,6 +59,7 @@ namespace MagicalGirl.EditorTools
             BuildCity();
             BuildBoundary();
             BuildBroomRig();
+            BuildEnemySchool();
 
             var light = new GameObject("Directional Light");
             var lightComp = light.AddComponent<Light>();
@@ -122,6 +128,102 @@ namespace MagicalGirl.EditorTools
         {
             var layout = CityGenerator.Generate(k_CityConfig);
             CityBuilder.Build(layout, null);
+        }
+
+        /// <summary>
+        /// スクール(小型・群れ)の編隊を生成するSchoolSpawnerを配置する。箒の開始位置
+        /// (z=-250)より奥から、プレイヤーに向かって直進してくるよう設定する。
+        ///
+        /// 生成(Instantiate)自体はSchoolSpawner.Start()で実行時に行われる。ここで
+        /// Spawn()を直接呼んでしまうと、EnemyControllerの進行方向・ステータスは
+        /// [SerializeField]でないため、シーン保存→実機での再ロード時に失われてしまう
+        /// (実際にこの問題が起き、サメが意図と逆方向へ飛んでいくバグになった)。
+        /// 引数: なし
+        /// 返り値: なし
+        /// </summary>
+        static void BuildEnemySchool()
+        {
+            var prefab = EnsureSharkPrefab();
+            if (prefab == null)
+                return;
+
+            var spawnerGo = new GameObject("SchoolSpawner");
+            // 箒の開始位置(0, 150, -250)より奥に置く。SchoolSpawnerはこの位置を基準に生成する。
+            spawnerGo.transform.position = new Vector3(0f, 150f, 100f);
+
+            var spawner = spawnerGo.AddComponent<SchoolSpawner>();
+            var so = new SerializedObject(spawner);
+            so.FindProperty("m_EnemyPrefab").objectReferenceValue = prefab;
+            so.FindProperty("m_Pattern").enumValueIndex = (int)FormationPattern.V;
+            so.FindProperty("m_MemberCount").intValue = 5;
+            so.FindProperty("m_Spacing").floatValue = 8f;
+            so.FindProperty("m_EnemyMaxHealth").floatValue = 20f;
+            so.FindProperty("m_EnemySpeed").floatValue = 12f;
+            so.FindProperty("m_SpawnDirection").vector3Value = Vector3.back; // -Z方向、プレイヤー側へ
+            so.ApplyModifiedProperties();
+        }
+
+        /// <summary>
+        /// shark.fbxからスクール用の敵プレハブを作る(既に作成済みならそれを再利用する)。
+        /// EnemyControllerとモデルのバウンディングに合わせたBoxColliderを付与する。
+        /// 引数: なし
+        /// 返り値: 生成(または既存)のプレハブ。shark.fbxが見つからない場合はnull
+        /// </summary>
+        static EnemyController EnsureSharkPrefab()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<GameObject>(k_SharkPrefabPath);
+            if (existing != null)
+                return existing.GetComponent<EnemyController>();
+
+            var sharkModel = AssetDatabase.LoadAssetAtPath<GameObject>(k_SharkModelPath);
+            if (sharkModel == null)
+            {
+                Debug.LogError("[FlightTestSceneSetup] shark.fbxが見つかりません: " + k_SharkModelPath);
+                return null;
+            }
+
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(sharkModel);
+            instance.name = "SharkSchool";
+            instance.AddComponent<EnemyController>();
+
+            // 階層を組み替える(子の付け替え)にはプレハブインスタンスのままでは
+            // SetParent()が拒否されるため、先にプレハブ接続を解除しておく。
+            // (このインスタンスはこの後SaveAsPrefabAssetで新規プレハブとして保存するため問題ない)
+            PrefabUtility.UnpackPrefabInstance(instance, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
+
+            // モデルは鼻先がローカルZ-方向、尾びれがローカルZ+方向を向いている(頂点分布で確認済み)。
+            // SchoolSpawnerはこのプレハブのルートに対しQuaternion.LookRotation(進行方向)で
+            // 絶対回転を設定するため、ルート自体には回転を焼き込めない。
+            // ルート直下のArmature/メッシュは、Blender→Unity変換由来のベース回転(X軸270度)を
+            // 既に持っているため、それらに直接Space.Selfで回転を加えると、親から見た実際の
+            // 回転軸がベース回転によってねじれてしまい、意図した前後反転ではなく上下・左右の
+            // 反転になってしまう(実際に発生した不具合)。
+            // そこで無回転の空の親(OrientationFix)でラップし、そちらをワールド基準で180度
+            // (Y軸)回転することで、既存の姿勢を保ったまま前後だけを正しく反転する。
+            var originalChildren = new System.Collections.Generic.List<Transform>();
+            foreach (Transform child in instance.transform)
+                originalChildren.Add(child);
+
+            var orientationFix = new GameObject("OrientationFix").transform;
+            orientationFix.SetParent(instance.transform, false);
+            foreach (var child in originalChildren)
+                child.SetParent(orientationFix, true);
+
+            orientationFix.Rotate(0f, 180f, 0f, Space.Self);
+
+            var renderer = instance.GetComponentInChildren<Renderer>();
+            var collider = instance.AddComponent<BoxCollider>();
+            if (renderer != null)
+            {
+                collider.center = instance.transform.InverseTransformPoint(renderer.bounds.center);
+                collider.size = renderer.bounds.size;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(k_SharkPrefabPath));
+            var savedPrefab = PrefabUtility.SaveAsPrefabAsset(instance, k_SharkPrefabPath);
+            Object.DestroyImmediate(instance);
+
+            return savedPrefab.GetComponent<EnemyController>();
         }
 
         /// <summary>
