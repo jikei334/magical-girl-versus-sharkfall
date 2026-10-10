@@ -290,7 +290,34 @@ namespace MagicalGirl.EditorTools
             so.ApplyModifiedProperties();
 
             var gestureInput = BuildGestureInput(rigGo, cameraGo);
+            BuildRecalibration(rigGo, cameraGo, gestureInput);
             BuildCombat(rigGo, cameraGo, gestureInput);
+        }
+
+        /// <summary>
+        /// タッチパッドの長押しで再キャリブレーションするRecalibrationControllerを配置する。
+        /// 引数: rigGo - 箒リグのGameObject / cameraGo - デバッグ表示の親にするカメラGameObject
+        ///        / gestureInput - 長押し検知元
+        /// 返り値: なし
+        /// </summary>
+        static void BuildRecalibration(GameObject rigGo, GameObject cameraGo, GestureInputController gestureInput)
+        {
+            var debugTextGo = new GameObject("CalibrationDebugText");
+            debugTextGo.transform.SetParent(cameraGo.transform, false);
+            debugTextGo.transform.localPosition = new Vector3(0.7f, 0.4f, 3f);
+            var debugTm = debugTextGo.AddComponent<TextMesh>();
+            debugTm.text = "Calibration: -";
+            debugTm.fontSize = 28;
+            debugTm.characterSize = 0.011f;
+            debugTm.anchor = TextAnchor.MiddleCenter;
+            debugTm.alignment = TextAlignment.Center;
+            debugTm.color = Color.cyan;
+
+            var controller = rigGo.AddComponent<RecalibrationController>();
+            var so = new SerializedObject(controller);
+            so.FindProperty("m_GestureInput").objectReferenceValue = gestureInput;
+            so.FindProperty("m_DebugText").objectReferenceValue = debugTm;
+            so.ApplyModifiedProperties();
         }
 
         /// <summary>
