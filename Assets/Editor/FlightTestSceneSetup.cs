@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using MagicalGirl.City;
 using MagicalGirl.Combat;
 using MagicalGirl.Controls;
@@ -7,6 +8,7 @@ using MagicalGirl.Core.Enemy;
 using MagicalGirl.Enemy;
 using MagicalGirl.Gesture;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -45,8 +47,9 @@ namespace MagicalGirl.EditorTools
 
         const string k_SharkModelPath = "Assets/Art/Enemies/School/shark.fbx";
         const string k_SharkPrefabPath = "Assets/Prefabs/Enemies/SharkSchool.prefab";
+        const string k_FireballModelPath = "Assets/Art/Sample/fireball.glb";
         const string k_FireballPrefabPath = "Assets/Prefabs/Combat/Fireball.prefab";
-        const string k_FireballMaterialPath = "Assets/Prefabs/Combat/FireballMaterial.mat";
+        const string k_FireballAnimatorControllerPath = "Assets/Prefabs/Combat/FireballAnimator.controller";
         const string k_BarrierMaterialPath = "Assets/Prefabs/Combat/BarrierMaterial.mat";
 
         /// <summary>
@@ -409,11 +412,14 @@ namespace MagicalGirl.EditorTools
         }
 
         /// <summary>
-        /// 火球のプレハブを作る(既に作成済みならそれを再利用する)。オレンジ色に発光する
-        /// 球体にFireballコンポーネント(RequireComponentでRigidbody/SphereColliderも付与)を
-        /// 付けただけのシンプルな見た目。
+        /// 火球のプレハブを作る(既に作成済みならそれを再利用する)。fireball.glb
+        /// (Spawn/Fly/Impactのアニメーション付き)を元に、当たり判定(コア相当のSphereCollider)と
+        /// Fireballコンポーネント(RequireComponentでRigidbodyも付与)を追加する。
+        /// モデルの頂点分布を確認したところ、炎の尾はローカルZ-方向、進行方向(ヘッド側)が
+        /// ローカルZ+方向で、Quaternion.LookRotation()の規約と既に一致していたため、
+        /// サメ(shark.fbx)で必要だった向きの補正は不要だった。
         /// 引数: なし
-        /// 返り値: 生成(または既存)のプレハブ
+        /// 返り値: 生成(または既存)のプレハブ。fireball.glbが見つからない場合はnull
         /// </summary>
         static Fireball EnsureFireballPrefab()
         {
@@ -421,25 +427,24 @@ namespace MagicalGirl.EditorTools
             if (existing != null)
                 return existing.GetComponent<Fireball>();
 
-            var instance = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            var fireballModel = AssetDatabase.LoadAssetAtPath<GameObject>(k_FireballModelPath);
+            if (fireballModel == null)
+            {
+                Debug.LogError("[FlightTestSceneSetup] fireball.glbが見つかりません: " + k_FireballModelPath);
+                return null;
+            }
+
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(fireballModel);
             instance.name = "Fireball";
-            // 実機確認で「火球が見えない」との報告があったため、街のスケール(ビル高さ15〜250)に
-            // 対して十分目立つサイズ・発光強度にする。
-            instance.transform.localScale = Vector3.one * 3f;
 
-            var material = new Material(Shader.Find("Standard"));
-            material.color = new Color(1f, 0.5f, 0.1f);
-            material.EnableKeyword("_EMISSION");
-            material.SetColor("_EmissionColor", new Color(1f, 0.3f, 0f) * 4f);
+            // コア(本体の球)相当の当たり判定。炎の尾(最大で約2.9先まで伸びる)は判定に含めない。
+            var collider = instance.AddComponent<SphereCollider>();
+            collider.center = Vector3.zero;
+            collider.radius = 0.5f;
 
-            // new Material()で作った未保存のマテリアルをそのままプレハブに割り当てて
-            // SaveAsPrefabAssetすると、アセット化されていない参照は保存時にnullへ落ちてしまい
-            // (実機で「火球が全く見えない」不具合の原因だった)、レンダラーにマテリアル無しの
-            // まま生成されてしまう。先にマテリアル自体を独立したアセットとして保存することで、
-            // プレハブから有効な参照として残るようにする。
-            Directory.CreateDirectory(Path.GetDirectoryName(k_FireballMaterialPath));
-            AssetDatabase.CreateAsset(material, k_FireballMaterialPath);
-            instance.GetComponent<Renderer>().sharedMaterial = material;
+            var animator = instance.GetComponent<Animator>();
+            if (animator != null)
+                animator.runtimeAnimatorController = EnsureFireballAnimatorController();
 
             instance.AddComponent<Fireball>();
 
@@ -448,6 +453,39 @@ namespace MagicalGirl.EditorTools
             Object.DestroyImmediate(instance);
 
             return savedPrefab.GetComponent<Fireball>();
+        }
+
+        /// <summary>
+        /// fireball.glb内のSpawn/Fly/ImpactクリップをそれぞれStateとして持つAnimatorControllerを
+        /// 作る(既に作成済みならそれを再利用する)。クリップ間の自動遷移は組まず、
+        /// Fireball.cs側からAnimator.Play(ステート名)で明示的に切り替える想定。
+        /// 引数: なし
+        /// 返り値: 生成(または既存)のAnimatorController
+        /// </summary>
+        static AnimatorController EnsureFireballAnimatorController()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<AnimatorController>(k_FireballAnimatorControllerPath);
+            if (existing != null)
+                return existing;
+
+            Directory.CreateDirectory(Path.GetDirectoryName(k_FireballAnimatorControllerPath));
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(k_FireballAnimatorControllerPath);
+
+            var clips = AssetDatabase.LoadAllAssetsAtPath(k_FireballModelPath).OfType<AnimationClip>().ToList();
+            foreach (var clipName in new[] { "Spawn", "Fly", "Impact" })
+            {
+                var clip = clips.FirstOrDefault(c => c.name == clipName);
+                if (clip == null)
+                {
+                    Debug.LogError($"[FlightTestSceneSetup] fireball.glbに{clipName}クリップが見つかりません");
+                    continue;
+                }
+
+                var state = controller.AddMotion(clip);
+                state.name = clipName;
+            }
+
+            return controller;
         }
 
         /// <summary>
