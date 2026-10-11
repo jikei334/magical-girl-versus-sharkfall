@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "com.xreal.xr": "file:com.xreal.xr",
+    "com.unity.cloud.gltfast": "6.12.1",
     "com.unity.xr.management": "4.4.1",
     "com.unity.xr.core-utils": "2.2.0",
     "com.unity.ugui": "1.0.0",
