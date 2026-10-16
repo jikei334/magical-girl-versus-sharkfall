@@ -47,6 +47,7 @@ namespace MagicalGirl.EditorTools
 
         const string k_SharkModelPath = "Assets/Art/Enemies/School/shark.fbx";
         const string k_SharkPrefabPath = "Assets/Prefabs/Enemies/SharkSchool.prefab";
+        const string k_CityMaterialsFolder = "Assets/Materials/City";
         const string k_FireballModelPath = "Assets/Art/Sample/fireball.glb";
         const string k_FireballPrefabPath = "Assets/Prefabs/Combat/Fireball.prefab";
         const string k_FireballAnimatorControllerPath = "Assets/Prefabs/Combat/FireballAnimator.controller";
@@ -134,7 +135,65 @@ namespace MagicalGirl.EditorTools
         static void BuildCity()
         {
             var layout = CityGenerator.Generate(k_CityConfig);
-            CityBuilder.Build(layout, null);
+            var materials = EnsureCityMaterials();
+            CityBuilder.Build(layout, null, materials);
+        }
+
+        /// <summary>
+        /// 街の外壁・屋上・ランドマーク用マテリアル一式を作る(既に作成済みならそれを再利用する)。
+        /// 引数: なし
+        /// 返り値: 生成(または既存)のCityMaterialPalette
+        /// </summary>
+        static CityMaterialPalette EnsureCityMaterials()
+        {
+            var facadeMaterials = new[]
+            {
+                EnsureCityMaterial("Assets/Art/Sample/building_facade_glass.png", "FacadeGlass"),
+                EnsureCityMaterial("Assets/Art/Sample/building_facade_concrete.png", "FacadeConcrete"),
+                EnsureCityMaterial("Assets/Art/Sample/building_facade_brick.png", "FacadeBrick"),
+            };
+            var roofMaterial = EnsureCityMaterial("Assets/Art/Sample/building_roof.png", "Roof");
+            var landmarkMaterial = EnsureCityMaterial("Assets/Art/Sample/landmark_facade.png", "Landmark");
+
+            return new CityMaterialPalette(facadeMaterials, roofMaterial, landmarkMaterial);
+        }
+
+        /// <summary>
+        /// 街の見た目用マテリアルを1つ作る(既に作成済みならそれを再利用する)。トゥーン調の
+        /// ベタ塗りテクスチャなので、シーンのライティングの影響を受けないUnlitシェーダーを使う
+        /// (Standardシェーダーだと陰影が付いてフラットな絵柄が崩れてしまう)。テクスチャの
+        /// Wrap ModeはRepeatに揃える(タイリングにはRepeatが必須で、Clampだと端のピクセルが
+        /// 伸びるだけになってしまう)。
+        /// 引数: texturePath - 元テクスチャのパス / materialName - 保存するマテリアル名
+        /// 返り値: 生成(または既存)のマテリアル。テクスチャが見つからない場合はnull
+        /// </summary>
+        static Material EnsureCityMaterial(string texturePath, string materialName)
+        {
+            var materialPath = $"{k_CityMaterialsFolder}/{materialName}.mat";
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+            if (existing != null)
+                return existing;
+
+            var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
+            if (texture == null)
+            {
+                Debug.LogError("[FlightTestSceneSetup] テクスチャが見つかりません: " + texturePath);
+                return null;
+            }
+
+            if (AssetImporter.GetAtPath(texturePath) is TextureImporter importer && importer.wrapMode != TextureWrapMode.Repeat)
+            {
+                importer.wrapMode = TextureWrapMode.Repeat;
+                importer.SaveAndReimport();
+            }
+
+            var material = new Material(Shader.Find("Unlit/Texture"));
+            material.mainTexture = texture;
+
+            Directory.CreateDirectory(k_CityMaterialsFolder);
+            AssetDatabase.CreateAsset(material, materialPath);
+
+            return material;
         }
 
         /// <summary>
