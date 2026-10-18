@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Linq;
 using MagicalGirl.City;
@@ -48,6 +49,10 @@ namespace MagicalGirl.EditorTools
         const string k_SharkModelPath = "Assets/Art/Enemies/School/shark.fbx";
         const string k_SharkPrefabPath = "Assets/Prefabs/Enemies/SharkSchool.prefab";
         const string k_CityMaterialsFolder = "Assets/Materials/City";
+
+        // 屋上小物(貯水タンク・空調設備)は原寸(人間スケール)のままだと街のスケールに対して
+        // 小さすぎて目立たないため、この倍率で拡大して配置する。
+        const float RooftopPropScale = 6f;
         const string k_FireballModelPath = "Assets/Art/Sample/fireball.glb";
         const string k_FireballPrefabPath = "Assets/Prefabs/Combat/Fireball.prefab";
         const string k_FireballAnimatorControllerPath = "Assets/Prefabs/Combat/FireballAnimator.controller";
@@ -66,6 +71,7 @@ namespace MagicalGirl.EditorTools
             BuildGround();
             BuildCity();
             BuildRoads();
+            BuildRoadProps();
             BuildBoundary();
             BuildBroomRig();
             BuildEnemySchool();
@@ -236,6 +242,133 @@ namespace MagicalGirl.EditorTools
         }
 
         /// <summary>
+        /// 道路小物(街灯・標識・信号機)と屋上小物(貯水タンク・空調設備)を配置する。
+        /// 引数: なし
+        /// 返り値: なし
+        /// </summary>
+        static void BuildRoadProps()
+        {
+            var streetlampPrefab = EnsureRoadPropPrefab("Assets/Art/Sample/streetlamp.glb", "Assets/Prefabs/City/Streetlamp.prefab");
+            var roadSignPrefab = EnsureRoadPropPrefab("Assets/Art/Sample/road_sign.glb", "Assets/Prefabs/City/RoadSign.prefab");
+            var trafficLightPrefab = EnsureRoadPropPrefab("Assets/Art/Sample/traffic_light.glb", "Assets/Prefabs/City/TrafficLight.prefab");
+            var rooftopTankPrefab = EnsureRoadPropPrefab("Assets/Art/Sample/rooftop_tank.glb", "Assets/Prefabs/City/RooftopTank.prefab");
+            var rooftopVentPrefab = EnsureRoadPropPrefab("Assets/Art/Sample/rooftop_vent.glb", "Assets/Prefabs/City/RooftopVent.prefab");
+
+            var root = new GameObject("GeneratedRoadProps");
+            var roadLayout = RoadGenerator.Generate(k_CityConfig);
+
+            // 街灯: 道路の片側に沿って一定間隔で配置する。
+            if (streetlampPrefab != null)
+            {
+                var sideOffset = k_CityConfig.RoadWidth / 2f + 2f;
+                foreach (var point in RoadPropPlacer.GenerateAlongRoadside(roadLayout, spacing: 80f, sideOffset: sideOffset))
+                    PlaceProp(streetlampPrefab, point.X, point.Z, root.transform);
+            }
+
+            // 道路標識: 街灯の反対側に、もっと疎らな間隔で配置する。
+            if (roadSignPrefab != null)
+            {
+                var sideOffset = -(k_CityConfig.RoadWidth / 2f + 2f);
+                foreach (var point in RoadPropPlacer.GenerateAlongRoadside(roadLayout, spacing: 160f, sideOffset: sideOffset))
+                    PlaceProp(roadSignPrefab, point.X, point.Z, root.transform);
+            }
+
+            // 信号機: 交差点のうち、間引いた一部にだけ配置する(全交差点だと過密になるため)。
+            // 交差点の中心(道路の真ん中)に浮いていると不自然なので、交差点の角に寄せる。
+            if (trafficLightPrefab != null)
+            {
+                var spacing = k_CityConfig.BlockSize + k_CityConfig.RoadWidth;
+                var cornerOffset = k_CityConfig.RoadWidth / 2f - 2f;
+                for (var bx = -k_CityConfig.GridExtent; bx < k_CityConfig.GridExtent; bx += 2)
+                {
+                    for (var bz = -k_CityConfig.GridExtent; bz < k_CityConfig.GridExtent; bz += 2)
+                    {
+                        var x = (bx + 0.5f) * spacing + cornerOffset;
+                        var z = (bz + 0.5f) * spacing + cornerOffset;
+                        PlaceProp(trafficLightPrefab, x, z, root.transform);
+                    }
+                }
+            }
+
+            // 屋上小物: 建物ごとの位置から決定的に選び、一部の建物の最上段ブロックの上に乗せる。
+            if (rooftopTankPrefab != null || rooftopVentPrefab != null)
+            {
+                var cityLayout = CityGenerator.Generate(k_CityConfig);
+                foreach (var building in cityLayout.Buildings)
+                {
+                    var hash = (uint)HashCode.Combine(building.X, building.Z);
+                    var choice = hash % 4; // 0=タンク, 1=換気設備, 2,3=無し
+                    var prefab = choice == 0 ? rooftopTankPrefab : choice == 1 ? rooftopVentPrefab : null;
+                    if (prefab == null)
+                        continue;
+
+                    var topBlock = building.Blocks[0];
+                    foreach (var block in building.Blocks)
+                    {
+                        if (block.BaseHeight + block.Height > topBlock.BaseHeight + topBlock.Height)
+                            topBlock = block;
+                    }
+
+                    var propGo = PlaceProp(prefab, building.X + topBlock.OffsetX, building.Z + topBlock.OffsetZ, root.transform);
+                    if (propGo != null)
+                    {
+                        propGo.transform.position += Vector3.up * (topBlock.BaseHeight + topBlock.Height);
+                        // 実機確認で「小さすぎて存在が薄い」とのことだったため、街のスケール
+                        // (ビル幅10〜30程度)に対して十分目立つ大きさまで拡大する。
+                        propGo.transform.localScale *= RooftopPropScale;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// プレハブを指定したワールドX,Z位置(Yはプレハブ自身の既定値のまま)に配置する。
+        /// プレハブ自体が持つローカル座標・回転(接地位置の補正や向きの補正が焼き込まれている
+        /// 場合がある)を変えないよう、位置はワールドX,Zだけを上書きする。
+        /// 引数: prefab - 配置するプレハブ / x, z - ワールド座標 / parent - 配置先の親Transform
+        /// 返り値: 生成したGameObject(prefabがnullならnull)
+        /// </summary>
+        static GameObject PlaceProp(GameObject prefab, float x, float z, Transform parent)
+        {
+            if (prefab == null)
+                return null;
+
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent);
+            var position = instance.transform.position;
+            instance.transform.position = new Vector3(x, position.y, z);
+            return instance;
+        }
+
+        /// <summary>
+        /// 道路小物・屋上小物のプレハブを作る(既に作成済みならそれを再利用する)。
+        /// いずれもボーンを持たない単純な静的メッシュのため、取り込んだモデルをそのまま
+        /// プレハブ化するだけでよい(当たり判定・追加コンポーネントは付けない、純粋な装飾物)。
+        /// 引数: modelPath - 元モデル(.glb)のパス / prefabPath - 保存先のプレハブパス
+        /// 返り値: 生成(または既存)のプレハブ。モデルが見つからない場合はnull
+        /// </summary>
+        static GameObject EnsureRoadPropPrefab(string modelPath, string prefabPath)
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            if (existing != null)
+                return existing;
+
+            var model = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
+            if (model == null)
+            {
+                Debug.LogError("[FlightTestSceneSetup] モデルが見つかりません: " + modelPath);
+                return null;
+            }
+
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(model);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(prefabPath));
+            var savedPrefab = PrefabUtility.SaveAsPrefabAsset(instance, prefabPath);
+            UnityEngine.Object.DestroyImmediate(instance);
+
+            return savedPrefab;
+        }
+
+        /// <summary>
         /// センターライン用マテリアルを作る(既に作成済みならそれを再利用する)。
         /// 引数: なし
         /// 返り値: 生成(または既存)のマテリアル
@@ -295,7 +428,7 @@ namespace MagicalGirl.EditorTools
 
             Directory.CreateDirectory(Path.GetDirectoryName(texturePath));
             File.WriteAllBytes(texturePath, texture.EncodeToPNG());
-            Object.DestroyImmediate(texture);
+            UnityEngine.Object.DestroyImmediate(texture);
             AssetDatabase.ImportAsset(texturePath);
 
             if (AssetImporter.GetAtPath(texturePath) is TextureImporter importer)
@@ -400,7 +533,7 @@ namespace MagicalGirl.EditorTools
 
             Directory.CreateDirectory(Path.GetDirectoryName(k_SharkPrefabPath));
             var savedPrefab = PrefabUtility.SaveAsPrefabAsset(instance, k_SharkPrefabPath);
-            Object.DestroyImmediate(instance);
+            UnityEngine.Object.DestroyImmediate(instance);
 
             return savedPrefab.GetComponent<EnemyController>();
         }
@@ -622,7 +755,7 @@ namespace MagicalGirl.EditorTools
 
             Directory.CreateDirectory(Path.GetDirectoryName(k_FireballPrefabPath));
             var savedPrefab = PrefabUtility.SaveAsPrefabAsset(instance, k_FireballPrefabPath);
-            Object.DestroyImmediate(instance);
+            UnityEngine.Object.DestroyImmediate(instance);
 
             return savedPrefab.GetComponent<Fireball>();
         }
