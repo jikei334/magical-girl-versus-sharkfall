@@ -65,6 +65,7 @@ namespace MagicalGirl.EditorTools
 
             BuildGround();
             BuildCity();
+            BuildRoads();
             BuildBoundary();
             BuildBroomRig();
             BuildEnemySchool();
@@ -114,6 +115,31 @@ namespace MagicalGirl.EditorTools
             // Planeは10x10単位なので、境界壁(StageHalfExtent)より確実に広くなるスケールにする。
             var scale = StageHalfExtent / 5f + 10f;
             ground.transform.localScale = new Vector3(scale, 1f, scale);
+
+            // デフォルトの白のままだと視認性が悪いため、道路・ビルと同じトーンの
+            // 控えめなグレーに変える(道路や建物の隙間から見える部分)。
+            ground.GetComponent<Renderer>().sharedMaterial = EnsureGroundMaterial();
+        }
+
+        /// <summary>
+        /// 地面用の控えめなグレーのマテリアルを作る(既に作成済みならそれを再利用する)。
+        /// 引数: なし
+        /// 返り値: 生成(または既存)のマテリアル
+        /// </summary>
+        static Material EnsureGroundMaterial()
+        {
+            var materialPath = $"{k_CityMaterialsFolder}/Ground.mat";
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+            if (existing != null)
+                return existing;
+
+            var material = new Material(Shader.Find("Unlit/Color"));
+            material.color = new Color(0.55f, 0.58f, 0.55f);
+
+            Directory.CreateDirectory(k_CityMaterialsFolder);
+            AssetDatabase.CreateAsset(material, materialPath);
+
+            return material;
         }
 
         /// <summary>
@@ -194,6 +220,93 @@ namespace MagicalGirl.EditorTools
             AssetDatabase.CreateAsset(material, materialPath);
 
             return material;
+        }
+
+        /// <summary>
+        /// グリッド道路網(RoadGenerator)を生成し、路面・センターラインを配置する。
+        /// 引数: なし
+        /// 返り値: なし
+        /// </summary>
+        static void BuildRoads()
+        {
+            var layout = RoadGenerator.Generate(k_CityConfig);
+            var asphaltMaterial = EnsureCityMaterial("Assets/Art/Sample/road_asphalt.png", "RoadAsphalt");
+            var centerlineMaterial = EnsureCenterlineMaterial();
+            RoadBuilder.Build(layout, null, asphaltMaterial, centerlineMaterial);
+        }
+
+        /// <summary>
+        /// センターライン用マテリアルを作る(既に作成済みならそれを再利用する)。
+        /// 引数: なし
+        /// 返り値: 生成(または既存)のマテリアル
+        /// </summary>
+        static Material EnsureCenterlineMaterial()
+        {
+            var materialPath = $"{k_CityMaterialsFolder}/Centerline.mat";
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+            if (existing != null)
+                return existing;
+
+            var texture = EnsureCenterlineTexture();
+
+            // 破線はアルファで切り抜くため、半透明描画に対応したUnlitシェーダーを使う。
+            var material = new Material(Shader.Find("Unlit/Transparent"));
+            material.mainTexture = texture;
+
+            Directory.CreateDirectory(k_CityMaterialsFolder);
+            AssetDatabase.CreateAsset(material, materialPath);
+
+            return material;
+        }
+
+        /// <summary>
+        /// センターラインの破線パターンを持つ透過PNGをコードで生成する(既に作成済みならそれを
+        /// 再利用する)。AI画像生成では「道路」という概念自体が中央線を連想させてしまい、
+        /// 意図しない線が混入する問題が解決しづらかったため、Unity側で確実にピクセルを
+        /// 制御できるこの方式にした。縦長の画像で、上から一定割合を白(破線部分)・残りを
+        /// 透明(隙間部分)にする。RoadBuilder側でローカルZ(長さ方向)に沿ってタイリングする。
+        /// 引数: なし
+        /// 返り値: 生成(または既存)のテクスチャ
+        /// </summary>
+        static Texture2D EnsureCenterlineTexture()
+        {
+            const string texturePath = "Assets/Materials/City/CenterlineDash.png";
+
+            var existing = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
+            if (existing != null)
+                return existing;
+
+            const int width = 8;
+            const int height = 64;
+            const float dashRatio = 0.6f; // 画像の上から60%を破線(白)、残り40%を隙間(透明)にする
+            var dashRows = Mathf.RoundToInt(height * dashRatio);
+
+            var texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+            for (var y = 0; y < height; y++)
+            {
+                // Texture2Dはy=0が画像の下端。「上からdashRows行」を白にしたいので、
+                // 上端からの行数に変換してから判定する。
+                var rowsFromTop = height - 1 - y;
+                var color = rowsFromTop < dashRows ? new Color(1f, 1f, 1f, 1f) : new Color(1f, 1f, 1f, 0f);
+                for (var x = 0; x < width; x++)
+                    texture.SetPixel(x, y, color);
+            }
+            texture.Apply();
+
+            Directory.CreateDirectory(Path.GetDirectoryName(texturePath));
+            File.WriteAllBytes(texturePath, texture.EncodeToPNG());
+            Object.DestroyImmediate(texture);
+            AssetDatabase.ImportAsset(texturePath);
+
+            if (AssetImporter.GetAtPath(texturePath) is TextureImporter importer)
+            {
+                importer.alphaIsTransparency = true;
+                importer.filterMode = FilterMode.Point; // トゥーン調に合わせ、破線の境界をくっきりさせる
+                importer.wrapMode = TextureWrapMode.Repeat;
+                importer.SaveAndReimport();
+            }
+
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
         }
 
         /// <summary>
